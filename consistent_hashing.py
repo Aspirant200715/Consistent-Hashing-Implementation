@@ -1,115 +1,168 @@
 import hashlib
 import bisect
-from typing import List, Dict
+import threading
+from typing import List, Dict, Optional
+
 
 class ConsistentHash:
-    def __init__(self, nodes: List[str] = None, virtual_nodes: int = 100):
-
+    def __init__(
+        self,
+        nodes: Optional[Dict[str, int]] = None,
+        virtual_nodes: int = 100,
+        replication_factor: int = 3,
+    ):
         self.virtual_nodes = virtual_nodes
+        self.replication_factor = replication_factor
+
         self.ring: Dict[int, str] = {}
-        self.vnode_map: Dict[int, str] = {}
         self.sorted_keys: List[int] = []
+        self.node_weights: Dict[str, int] = {}
+
+        self._lock = threading.RLock()
 
         if nodes:
-            for node in nodes:
-                self.add_node(node)
+            for node, weight in nodes.items():
+                self.add_node(node, weight)
 
     def _hash(self, key: str) -> int:
-        return int(hashlib.md5(key.encode('utf-8')).hexdigest(), 16)
+        return int(hashlib.md5(key.encode("utf-8")).hexdigest(), 16)
 
-    def add_node(self, node: str) -> None:
-        for i in range(self.virtual_nodes):
-            vnode_key = f"{node}#{i}"
-            
-            hash_val = self._hash(vnode_key)
-            
-            self.ring[hash_val] = node
-            self.vnode_map[hash_val] = vnode_key
-            bisect.insort(self.sorted_keys, hash_val)   #binary search algorithm
+    def add_node(self, node: str, weight: int = 1) -> None:
+        with self._lock:
+            if node in self.node_weights:
+                raise ValueError(f"Node {node} already exists")
+
+            self.node_weights[node] = weight
+            total_vnodes = self.virtual_nodes * weight
+
+            for i in range(total_vnodes):
+                vnode_key = f"{node}#{i}"
+                hash_val = self._hash(vnode_key)
+
+                while hash_val in self.ring:  # collision safe
+                    vnode_key += "_"
+                    hash_val = self._hash(vnode_key)
+
+                self.ring[hash_val] = node
+                bisect.insort(self.sorted_keys, hash_val)
 
     def remove_node(self, node: str) -> None:
-        for i in range(self.virtual_nodes):
-            vnode_key = f"{node}#{i}"
-            hash_val = self._hash(vnode_key)
-            
-            if hash_val in self.ring:
-                del self.ring[hash_val]
-            if hash_val in self.vnode_map:
-                del self.vnode_map[hash_val]
-            
-            if hash_val in self.sorted_keys:
-                self.sorted_keys.remove(hash_val)
+        with self._lock:
+            if node not in self.node_weights:
+                return
 
-    def get_node(self, key: str) -> str:
-        """
-        Finds the node responsible for a given key using Clockwise logic.
-        O(log V) where V is total virtual nodes.
-        """
-        if not self.ring:
-            return None 
-        hash_val = self._hash(key)
-        idx = bisect.bisect_left(self.sorted_keys, hash_val)
-        if idx == len(self.sorted_keys):
-            idx = 0    
-        target_hash = self.sorted_keys[idx]
-        
-        return self.ring[target_hash]
+            weight = self.node_weights[node]
+            total_vnodes = self.virtual_nodes * weight
 
-    def get_node_with_vnode(self, key: str) -> tuple:
+            for i in range(total_vnodes):
+                vnode_key = f"{node}#{i}"
+                hash_val = self._hash(vnode_key)
 
-        if not self.ring: return None, None
-        hash_val = self._hash(key)
-        idx = bisect.bisect_left(self.sorted_keys, hash_val)
-        if idx == len(self.sorted_keys): idx = 0
-        target_hash = self.sorted_keys[idx]
-        return self.ring[target_hash], self.vnode_map[target_hash]
-    
-#Test case 
+                idx = bisect.bisect_left(self.sorted_keys, hash_val)
+                if idx < len(self.sorted_keys) and self.sorted_keys[idx] == hash_val:
+                    self.sorted_keys.pop(idx)
+                    del self.ring[hash_val]
+
+            del self.node_weights[node]
+
+    def get_node(self, key: str) -> Optional[str]:
+        with self._lock:
+            if not self.ring:
+                return None
+
+            hash_val = self._hash(key)
+            idx = bisect.bisect_left(self.sorted_keys, hash_val)
+
+            if idx == len(self.sorted_keys):
+                idx = 0
+
+            return self.ring[self.sorted_keys[idx]]
+
+    def get_replicas(self, key: str) -> List[str]:
+        with self._lock:
+            if not self.ring:
+                return []
+
+            hash_val = self._hash(key)
+            idx = bisect.bisect_left(self.sorted_keys, hash_val)
+
+            replicas = []
+            visited = set()
+
+            for i in range(len(self.sorted_keys)):
+                index = (idx + i) % len(self.sorted_keys)
+                node = self.ring[self.sorted_keys[index]]
+
+                if node not in visited:
+                    replicas.append(node)
+                    visited.add(node)
+
+                if len(replicas) == min(self.replication_factor, len(self.node_weights)):
+                    break
+
+            return replicas
+
+
+#Test Case
 
 def run_simulation():
-    print("Running Consistent Hashing")
-    nodes = ["Node-A", "Node-B", "Node-C"]
-    ch = ConsistentHash(nodes, virtual_nodes=10)
-    print(f"Initial Nodes: {nodes}")
+    print("\nRunning Consistent Hashing\n")
 
-    keys = [f"user_{i}" for i in range(20)]
-    
-    initial_mapping: Dict[str, str] = {}
-    for k in keys:
-        initial_mapping[k] = ch.get_node(k)
-        
-    print("\nInitial Distribution")
-    counts = {n: 0 for n in nodes}
-    for k, v in initial_mapping.items():
-        counts[v] += 1
-        print(f"{k} -> {v}")
-    print(f"Distribution counts: {counts}")
-    
-    print("\nVirtual Nodes (Load Balancing)")
-    for k in keys[:5]: # Check first 5 keys
-        p_node, v_node = ch.get_node_with_vnode(k)
-        print(f"Key [{k}] routed to Physical [{p_node}] via Virtual [{v_node}]")
-    
+    nodes = {
+        "Node-A": 1,
+        "Node-B": 2, 
+        "Node-C": 1,
+    }
+
+    ch = ConsistentHash(nodes, virtual_nodes=50, replication_factor=2)
+
+    print(f"Initial Nodes (with weights): {nodes}")
+    print(f"Total Virtual Nodes: {len(ch.sorted_keys)}\n")
+
+    keys = [f"user_{i}" for i in range(1000)]
+
+    # Initial distribution
+    distribution = {node: 0 for node in nodes}
+
+    initial_mapping = {}
+    for key in keys:
+        node = ch.get_node(key)
+        initial_mapping[key] = node
+        distribution[node] += 1
+
+    print("📊 Initial Distribution:")
+    for node, count in distribution.items():
+        print(f"{node}: {count}")
+
+    # Replication example
+    print("\nReplica Check for user_42:")
+    print(ch.get_replicas("user_42"))
+
+    # Add new node
     new_node = "Node-D"
-    print(f"\n--- Adding {new_node} ---")
-    ch.add_node(new_node)
+    print(f"\n➕ Adding {new_node} (weight=1)\n")
+    ch.add_node(new_node, weight=1)
 
-    moved_keys = 0
-    print("\nKey Migrations")
-    for k in keys:
-        new_node_assignment = ch.get_node(k)
-        previous_node = initial_mapping[k]
-        
-        if new_node_assignment != previous_node:
-            moved_keys += 1
-            print(f"Key [{k}] moved from {previous_node} -> {new_node_assignment}")
-    
-    total_keys = len(keys)
-    percent_moved = (moved_keys / total_keys) * 100
-    print(f"\nTotal Keys: {total_keys}")
-    print(f"Moved Keys: {moved_keys}")
+    moved = 0
+    new_distribution = {node: 0 for node in ch.node_weights}
+
+    for key in keys:
+        new_node_assignment = ch.get_node(key)
+        new_distribution[new_node_assignment] += 1
+
+        if new_node_assignment != initial_mapping[key]:
+            moved += 1
+
+    percent_moved = (moved / len(keys)) * 100
+
+    print("New Distribution After Adding Node-D:")
+    for node, count in new_distribution.items():
+        print(f"{node}: {count}")
+
+    print(f"\nKeys Moved: {moved} / {len(keys)}")
     print(f"Percentage Moved: {percent_moved:.2f}%")
-    print(f"In Consistent Hashing, we expect ~1/(N+1) keys to move. 1/4 = 25%.")
+    print("Expected ≈ 1/(N+1) movement property ✔")
+
 
 if __name__ == "__main__":
     run_simulation()
