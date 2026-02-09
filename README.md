@@ -1,7 +1,7 @@
 # Consistent-Hashing-Implementation
-Design and implement a Consistent Hashing mechanism that: Distributes keys uniformly across nodes 
-Minimizes key movement during node addition/removal 
-Supports deterministic lookup 
-Handles node rebalancing efficiently
-Virtual Nodes creation and distribution
+1. Design and implement a Consistent Hashing mechanism that: Distributes keys uniformly across nodes 
+2. Minimizes key movement during node addition/removal 
+3. Supports deterministic lookup 
+4. Handles node rebalancing efficiently
+5. Virtual Nodes creation and distribution
 
