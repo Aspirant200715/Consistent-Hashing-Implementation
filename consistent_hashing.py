@@ -130,7 +130,7 @@ def run_simulation():
         initial_mapping[key] = node
         distribution[node] += 1
 
-    print("📊 Initial Distribution:")
+    print("Initial Distribution:")
     for node, count in distribution.items():
         print(f"{node}: {count}")
 
