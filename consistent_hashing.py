@@ -140,7 +140,7 @@ def run_simulation():
 
     # Add new node
     new_node = "Node-D"
-    print(f"\n➕ Adding {new_node} (weight=1)\n")
+    print(f"\nAdding {new_node} (weight=1)\n")
     ch.add_node(new_node, weight=1)
 
     moved = 0
