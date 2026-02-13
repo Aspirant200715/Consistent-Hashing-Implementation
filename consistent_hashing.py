@@ -153,16 +153,42 @@ def run_simulation():
         if new_node_assignment != initial_mapping[key]:
             moved += 1
 
-    percent_moved = (moved / len(keys)) * 100
 
-    print("New Distribution After Adding Node-D:")
-    for node, count in new_distribution.items():
-        print(f"{node}: {count}")
 
-    print(f"\nKeys Moved: {moved} / {len(keys)}")
-    print(f"Percentage Moved: {percent_moved:.2f}%")
-    print("Expected ≈ 1/(N+1) movement property ✔")
+    total_keys = len(keys)
+    percent_moved = (moved / total_keys) * 100
+
+    print("\nMovement Statistics (Consistent Hashing)")
+    print(f"Total Keys: {total_keys}")
+    print(f"Moved Keys: {moved}")
+    print(f"Actual Movement: {percent_moved:.2f}%")
+
+    # Expected movement ≈ 1 / (N+1)
+    old_n = len(nodes)              
+    new_n = len(ch.node_weights)    # nodes after adding Node-D
+
+    expected_movement = (1 / new_n) * 100
+    deviation = abs(percent_moved - expected_movement)
+
+    print(f"\nOld Nodes (N): {old_n}")
+    print(f"New Nodes (N+1): {new_n}")
+    print(f"Expected Movement (Theoretical): ~{expected_movement:.2f}%")
+    print(f"Deviation from Theory: {deviation:.2f}%")
+
 
 
 if __name__ == "__main__":
     run_simulation()
+
+
+
+
+
+
+
+
+
+
+
+
+
