@@ -70,12 +70,21 @@ def run_simulation():
 #Test case 
     total_keys = len(keys)
     percent_moved = (moved_keys / total_keys) * 100
-    
-    print(f"\nTotal Keys: {total_keys}")
+
+    print(f"\nMovement Statistics")
+    print(f"Total Keys: {total_keys}")
     print(f"Moved Keys: {moved_keys}")
-    print(f"Percentage Moved: {percent_moved:.2f}%")
-    
-    print(f"Expected Movement (Theoretical): ~{(len(nodes)/(len(nodes)+1))*100:.2f}%")
+    print(f"Actual Movement: {percent_moved:.2f}%")
+
+    old_n = len(nodes)           # original node count (before scaling)
+    new_n = len(hasher.nodes)    # new node count (after scaling)
+    expected_movement = (old_n / new_n) * 100
+    deviation = abs(percent_moved - expected_movement)
+    print(f"\nOld Nodes (N): {old_n}")
+    print(f"New Nodes (N+1): {new_n}")
+    print(f"Expected Movement (Theoretical): ~{expected_movement:.2f}%")
+    print(f"Deviation from Theory: {deviation:.2f}%")
+
 
 if __name__ == "__main__":
     run_simulation()
